@@ -8,14 +8,16 @@ const {
   login,
   current,
   edit,
-  getOperators,
+  getDrivers,
+  changePassword,
 } = require("../controllers/users");
 const { admin } = require("../middleware/admin");
 
 router.post("/register", fileMiddleware.single("image"), register);
 router.post("/login", fileMiddleware.single("image"), login);
 router.get("/", auth, current);
-router.get("/operators", auth, admin, getOperators);
+router.get("/drivers", auth, admin, getDrivers);
 router.put("/", auth, edit);
+router.put("/change-password", auth, changePassword);
 
 module.exports = router;

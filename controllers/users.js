@@ -59,8 +59,6 @@ const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    console.log(email, password);
-
     if (!email || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
@@ -95,7 +93,7 @@ const login = async (req, res) => {
 
 const current = async (req, res) => {
   try {
-    res.status(200).json({ data: req.user });
+    res.status(200).json(req.user);
   } catch (error) {
     res.status(500).json({ message: "Unknown server error" });
   }
@@ -123,16 +121,56 @@ const edit = async (req, res) => {
   }
 };
 
-const getOperators = async (req, res) => {
+const getDrivers = async (req, res) => {
   try {
-    const users = await prisma.user.findMany({
+    const drivers = await prisma.driverToAdmin.findMany({
       where: {
-        role: "OPERATOR",
+        adminId: req.user.id,
+      },
+      include: {
+        driver: {
+          select: {
+            cars: true,
+            user: true,
+          },
+        },
       },
     });
 
-    res.status(200).json(users);
+    res.status(200).json(drivers);
   } catch (error) {
+    res.status(500).json({ message: "Unknown server error" });
+  }
+};
+
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    const isPasswordCorrect = await bcrypt.compare(
+      currentPassword,
+      req.user.password
+    );
+
+    if (!isPasswordCorrect) {
+      return res.status(400).json({ message: "incorrect password" });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    const user = await prisma.user.update({
+      where: {
+        id: req.user.id,
+      },
+      data: {
+        password: hashedPassword,
+      },
+    });
+
+    res.status(200).json({ message: "success" });
+  } catch (error) {
+    console.log(error);
     res.status(500).json({ message: "Unknown server error" });
   }
 };
@@ -142,5 +180,6 @@ module.exports = {
   login,
   current,
   edit,
-  getOperators,
+  getDrivers,
+  changePassword,
 };

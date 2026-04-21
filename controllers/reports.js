@@ -3,93 +3,232 @@ const uploadFile = require("../utlls/uploadFile");
 
 const createReport = async (req, res) => {
   try {
-    const { title, productId } = req.body;
+    const { name, carId, status } = req.body;
     const file = req.file;
 
-    if (!title || !file || !productId) {
-      return res.status(400).json({
-        message: `All fields are required: title: ${title} file: ${!!file} productId: ${productId}`,
+    const prismaCreateReport = async (url) => {
+      const car = await prisma.car.findFirst({
+        where: {
+          id: carId,
+        },
       });
-    }
 
-    const product = await prisma.product.findUnique({
-      where: { id: productId },
-    });
+      if (!car) {
+        return res
+          .status(404)
+          .json({ message: "Could not find car with specefied id" });
+      }
 
-    if (!product) {
-      return res.status(404).json({ message: "Product not found" });
-    }
+      const driverAdminRelation = await prisma.driverToAdmin.findFirst({
+        where: {
+          driverId: req.user.drivers[0].id,
+        },
+        include: {
+          driver: {
+            include: {
+              user: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+          },
+        },
+      });
 
-    const createdAt = new Date(product.createdAt);
-    const commissionDate = new Date(product.commissionDate);
+      if (!driverAdminRelation) {
+        return res.status(404).json({
+          message: "Cannot create report because admin cannot be found",
+        });
+      }
 
-    const diffDays = Math.ceil(
-      (commissionDate - createdAt) / (1000 * 60 * 60 * 24)
+      const report = await prisma.report.create({
+        data: {
+          name,
+          carId,
+          userId: req.user.id,
+          fileUrl: url || "",
+        },
+        include: {
+          reportedCar: true,
+          driver: true,
+        },
+      });
+
+      await prisma.notifications.create({
+        data: {
+          userId: driverAdminRelation.adminId,
+          title: "Новый отчёт",
+          message: `Водитель ${driverAdminRelation.driver.user.firstName} ${driverAdminRelation.driver.user.lastName} подготовил отчёт по автомобилю: ${car.name} ${car.number}`,
+          reportId: report.id,
+        },
+      });
+
+      await prisma.car.update({
+        where: {
+          id: carId,
+        },
+        data: {
+          status: status || "READY",
+        },
+      });
+
+      return res.status(201).json(report);
+    };
+
+    await prisma.$transaction(
+      async (params) => {
+        if (req.user.role !== "DRIVER") {
+          return res
+            .status(400)
+            .json({ message: "Only the driver can create reports." });
+        }
+
+        if (file?.path) {
+          uploadFile(file.path)
+            .then(({ url }) => {
+              prismaCreateReport(url);
+            })
+            .catch((e) => {
+              return res.status(500).json({ message: "Failed to upload file" });
+            });
+        } else {
+          prismaCreateReport();
+        }
+      },
+      { maxWait: 5000, timeout: 20000 }
     );
-
-    const nextCommissionDate = new Date(product.commissionDate);
-    nextCommissionDate.setDate(nextCommissionDate.getDate() + diffDays);
-
-    uploadFile(file?.path)
-      .then(async (file) => {
-        const report = await prisma.report.create({
-          data: {
-            title,
-            productId,
-            fileUrl: file.url,
-          },
-        });
-
-        res.status(201).json(report);
-
-        await prisma.product.update({
-          where: {
-            id: productId,
-          },
-          data: {
-            totalUsageHours: 0,
-            commissionDate: nextCommissionDate,
-          },
-        });
-      })
-      .catch((e) => {
-        res.status(500).json({ message: "Failed to load file" });
-      });
   } catch (error) {
     console.log(error);
 
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Unknown server error" });
   }
 };
 
-const getReportsForProduct = async (req, res) => {
+const editReport = async (req, res) => {
   try {
-    const { productId } = req.params;
+    const { name, carId } = req.body;
+    const { id } = req.params;
+    const file = req.file;
 
-    const reports = await prisma.report.findMany({
+    const report = await prisma.report.findFirst({
       where: {
-        productId,
+        id,
       },
     });
 
-    res.status(200).json(reports);
+    if (!report) {
+      return res
+        .status(404)
+        .json({ message: "Cannot find report with specefied id" });
+    }
+
+    const prismaUpdateReport = async (url) => {
+      const updatedReport = await prisma.report.update({
+        where: {
+          id,
+        },
+        data: {
+          name: name || report.name,
+          carId: carId || report.carId,
+          fileUrl: url || report.fileUrl,
+        },
+      });
+
+      return res.status(200).json(updatedReport);
+    };
+
+    if (file?.path) {
+      uploadFile(file.path).then(({ url }) => {
+        prismaUpdateReport(url);
+      });
+    } else {
+      prismaUpdateReport();
+    }
   } catch (error) {
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Unknown server error" });
   }
 };
 
 const getReports = async (req, res) => {
   try {
-    const reports = await prisma.report.findMany();
+    const drivers = await prisma.driverToAdmin.findMany({
+      where: {
+        adminId: req.user.id,
+      },
+    });
+
+    const repots = await prisma.report.findMany({
+      where: {
+        id: {
+          in: drivers.map((d) => d.driverId),
+        },
+      },
+      include: {
+        reportedCar: true,
+        driver: true,
+      },
+    });
+
+    res.status(200).json(repots);
+  } catch (error) {
+    res.status(500).json({ message: "Unknown server error" });
+  }
+};
+
+const removeReport = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const report = await prisma.report.findFirst({
+      where: {
+        id,
+      },
+    });
+
+    if (!report) {
+      return res
+        .status(404)
+        .json({ message: "Cannot find report with specefied id" });
+    }
+
+    await prisma.report.delete({
+      where: {
+        id,
+      },
+    });
+
+    return res.status(200).json({ message: "success" });
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).json({ message: "Unknown server error" });
+  }
+};
+
+const getMyReports = async (req, res) => {
+  try {
+    const reports = await prisma.report.findMany({
+      where: {
+        userId: req.user.id,
+      },
+      include: {
+        reportedCar: true,
+        driver: true,
+      },
+    });
 
     res.status(200).json(reports);
   } catch (error) {
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Unknown server error" });
   }
 };
 
 module.exports = {
   createReport,
-  getReportsForProduct,
+  editReport,
   getReports,
+  removeReport,
+  getMyReports,
 };

@@ -23,10 +23,10 @@ app.use(express.urlencoded({ extended: false }));
 app.use("/public", express.static(path.join(__dirname, "public")));
 
 app.use("/api/users", require("./routes/users"));
-app.use("/api/products", require("./routes/products"));
-app.use("/api/maintenance", require("./routes/maintenance"));
-app.use("/api/schedule", require("./routes/schedule"));
-app.use("/api/notifications", require("./routes/notifications"));
+app.use("/api/cars", require("./routes/cars"));
+app.use("/api/drivers", require("./routes/drivers"));
 app.use("/api/reports", require("./routes/reports"));
+app.use("/api/notifications", require("./routes/notifications"));
+app.use("/api/dashboard", require("./routes/dashboard"));
 
 module.exports = app;

@@ -10,6 +10,9 @@ const auth = async (req, res, next) => {
       where: {
         id: decoded.id,
       },
+      include: {
+        drivers: true,
+      },
     });
 
     if (!user) {
