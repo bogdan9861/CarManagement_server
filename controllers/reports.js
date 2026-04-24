@@ -157,12 +157,21 @@ const getReports = async (req, res) => {
       where: {
         adminId: req.user.id,
       },
+      include: {
+        driver: {
+          include: {
+            user: true,
+          },
+        },
+      },
     });
+
+    console.log(drivers);
 
     const repots = await prisma.report.findMany({
       where: {
-        id: {
-          in: drivers.map((d) => d.driverId),
+        userId: {
+          in: drivers.map((d) => d.driver.user.id),
         },
       },
       include: {

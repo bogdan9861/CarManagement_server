@@ -24,11 +24,12 @@ enum MessageType {
 }
 
 model User {
-  id            String          @id @default(uuid())
-  email         String          @unique
-  password      String
-  firstName     String
-  lastName      String
+  id        String @id @default(uuid())
+  email     String @unique
+  password  String
+  firstName String
+  lastName  String
+
   reports       Report[]
   notifications Notifications[]
   role          Role            @default(ADMIN)

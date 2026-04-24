@@ -37,12 +37,19 @@ const getDashboard = async (req, res) => {
       where: {
         adminId: req.user.id,
       },
+      include: {
+        driver: {
+          include: {
+            user: true,
+          },
+        },
+      },
     });
 
     const reports = await prisma.report.findMany({
       where: {
         userId: {
-          in: drivers.map((d) => d.driverId),
+          in: drivers.map((d) => d.driver.userId),
         },
         date: {
           gte: startOfWeek,
@@ -88,6 +95,9 @@ const getDashboard = async (req, res) => {
         }),
 
         await prisma.car.findMany({
+          where: {
+            userId: req.user.id,
+          },
           take: 3,
         }),
       ]);
